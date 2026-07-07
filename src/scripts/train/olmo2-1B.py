@@ -232,7 +232,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
             "lm_evaluator",
             LMEvaluatorCallbackConfig(
                 eval_dataset=NumpyPaddedFSLDatasetConfig.from_data_mix(
-                    DataMix.dclm_100m_val,
+                    DataMix.dclm_fixed_val,
                     mix_base_dir=opts.data_root,
                     sequence_length=SEQUENCE_LENGTH,
                     tokenizer=tokenizer_config,

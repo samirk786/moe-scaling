@@ -43,6 +43,7 @@ class DataMix(DataMixBase):
     dclm_10m = "dclm-10m"
     dclm_100m_train = "dclm-100m-train"
     dclm_100m_val = "dclm-100m-val"
+    dclm_fixed_val = "dclm-fixed-val"
     dclm_upweight_1012 = "dclm-upweight-1022"
     arc_easy_train = "arc-easy-train"
     dolma17 = "dolma17"
