@@ -1,0 +1,2 @@
+# samir-of-train: small slice (docs 0-999, ~16M tokens) for high-R overfitting
+train,accounts/projects/berkeleynlp/samir.kassam/sanity_data/tokenized_train_small/part-0-00000.npy

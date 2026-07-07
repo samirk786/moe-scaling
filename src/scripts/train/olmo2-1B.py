@@ -60,7 +60,7 @@ C4_VALIDATION_PATH = [
 ]
 
 SEQUENCE_LENGTH = 4096
-GLOBAL_BATCH_SIZE = 1024 * SEQUENCE_LENGTH
+GLOBAL_BATCH_SIZE = 64 * SEQUENCE_LENGTH  # 64 seqs, matches infinite-compute batch=64
 
 
 # docs: start-define-config
@@ -205,7 +205,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
             "checkpointer",
             CheckpointerCallback(
                 save_interval=(steps_per_epoch if opts.scheduler == "wsds" else 5000),
-                ephemeral_save_interval=100,
+                ephemeral_save_interval=(max(1, steps_per_epoch // 4) if opts.scheduler == "wsds" else 100),
                 save_async=True,
             ),
         )
@@ -232,7 +232,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
             "lm_evaluator",
             LMEvaluatorCallbackConfig(
                 eval_dataset=NumpyPaddedFSLDatasetConfig.from_data_mix(
-                    DataMix.samir_sanity_val,
+                    DataMix.dclm_100m_val,
                     mix_base_dir=opts.data_root,
                     sequence_length=SEQUENCE_LENGTH,
                     tokenizer=tokenizer_config,
