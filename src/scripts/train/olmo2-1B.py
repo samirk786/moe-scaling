@@ -19,13 +19,14 @@ from olmo_core.data import (
     NumpyDataLoaderConfig,
     NumpyDatasetConfig,
     NumpyFSLDatasetConfig,
+    NumpyPaddedFSLDatasetConfig,
     TokenizerConfig,
 )
 from olmo_core.data.mixes import DataMix
 from olmo_core.distributed.parallel import DataParallelType
 from olmo_core.distributed.utils import get_rank
 from olmo_core.nn.transformer import TransformerConfig
-from olmo_core.optim import CosWithWarmup, OptimGroupOverride, SkipStepAdamWConfig
+from olmo_core.optim import ConstantWithWarmup, CosWithWarmup, WSD, WSDS, OptimGroupOverride, SkipStepAdamWConfig
 from olmo_core.train import (
     TrainerConfig,
     prepare_training_environment,
@@ -37,6 +38,7 @@ from olmo_core.train.callbacks import (
     CometCallback,
     ConfigSaverCallback,
     DownstreamEvaluatorCallbackConfig,
+    LMEvaluatorCallbackConfig,
     GPUMemoryMonitorCallback,
     ProfilerCallback,
     WandBCallback,
@@ -155,13 +157,25 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         num_workers=4,
     )
 
+    # steps per epoch from the seed budget (GLOBAL_BATCH_SIZE is in tokens)
+    steps_per_epoch = round(opts.unique_tokens / GLOBAL_BATCH_SIZE) if opts.unique_tokens else 0
+    if opts.scheduler == "constant":
+        scheduler = ConstantWithWarmup(warmup=20)
+    elif opts.scheduler == "cosine":
+        scheduler = CosWithWarmup(warmup_steps=2000)
+    elif opts.scheduler == "wsd":
+        scheduler = WSD(warmup=20, decay_fraction=0.1)
+    elif opts.scheduler == "wsds":
+        assert steps_per_epoch > 0, "wsds needs --unique-tokens"
+        scheduler = WSDS(period_lengths=[steps_per_epoch] * opts.epochs, warmup=20, decay_fraction=0.1)
+
     train_module_config = TransformerTrainModuleConfig(
         rank_microbatch_size=4
         * SEQUENCE_LENGTH,  # NOTE: this is specified in tokens, not instances
         max_sequence_length=SEQUENCE_LENGTH,
         optim=SkipStepAdamWConfig(
             lr=opts.lr,
-            weight_decay=0.033,
+            weight_decay=opts.wd,
             betas=(0.9, 0.95),
             group_overrides=[
                 OptimGroupOverride(params=["embeddings.weight"], opts=dict(weight_decay=0.0))
@@ -176,7 +190,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         ),
         z_loss_multiplier=1e-5,
         max_grad_norm=1.0,
-        scheduler=CosWithWarmup(warmup_steps=2000),
+        scheduler=scheduler,
     )
 
     trainer_config = (
@@ -190,7 +204,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         .with_callback(
             "checkpointer",
             CheckpointerCallback(
-                save_interval=5000,
+                save_interval=(steps_per_epoch if opts.scheduler == "wsds" else 5000),
                 ephemeral_save_interval=100,
                 save_async=True,
             ),
@@ -215,6 +229,21 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         .with_callback("config_saver", ConfigSaverCallback())
         .with_callback("profiler", ProfilerCallback(enabled=False))
         .with_callback(
+            "lm_evaluator",
+            LMEvaluatorCallbackConfig(
+                eval_dataset=NumpyPaddedFSLDatasetConfig.from_data_mix(
+                    DataMix.samir_sanity_val,
+                    mix_base_dir=opts.data_root,
+                    sequence_length=SEQUENCE_LENGTH,
+                    tokenizer=tokenizer_config,
+                    work_dir=work_dir,
+                ),
+                eval_interval=(steps_per_epoch if opts.scheduler == "wsds" else 25),
+                eval_on_startup=True,
+                eval_on_finish=True,
+            ),
+        )
+        .with_callback(
             "downstream_evaluator",
             # https://github.com/allenai/OLMo-in-loop-evals/blob/main/src/olmo_eval/tasks.py#L1752
             DownstreamEvaluatorCallbackConfig(
@@ -229,7 +258,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
                     "mmlu_other",
                 ],
                 tokenizer=tokenizer_config,
-                eval_interval=250,
+                eval_interval=(steps_per_epoch if opts.scheduler == "wsds" else 250),
             ),
         )
     )
@@ -287,6 +316,11 @@ def parser_args():
         default="/weka/oe-training-default/ai2-llm",
         help="Root directory for the data mix (mix_base_dir).",
     )
+    parser.add_argument("--wd", type=float, default=0.033)
+    parser.add_argument("--scheduler", type=str, default="constant", choices=["constant", "cosine", "wsd", "wsds"])
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--unique-tokens", type=int, default=0)
+
     opts, overrides = parser.parse_known_args()
     return opts, overrides
 
