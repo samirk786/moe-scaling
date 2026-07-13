@@ -162,7 +162,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
     if opts.scheduler == "constant":
         scheduler = ConstantWithWarmup(warmup=20)
     elif opts.scheduler == "cosine":
-        scheduler = CosWithWarmup(warmup_steps=2000)
+        scheduler = CosWithWarmup(warmup_steps=20)
     elif opts.scheduler == "wsd":
         scheduler = WSD(warmup=20, decay_fraction=0.1)
     elif opts.scheduler == "wsds":
