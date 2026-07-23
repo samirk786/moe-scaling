@@ -25,7 +25,17 @@ from olmo_core.data import (
 from olmo_core.data.mixes import DataMix
 from olmo_core.distributed.parallel import DataParallelType
 from olmo_core.distributed.utils import get_rank
-from olmo_core.nn.transformer import TransformerConfig
+from olmo_core.nn.moe import (
+    MoEConfig,
+    MoERouterConfig,
+    MoERouterGatingFunction,
+    MoEType,
+)
+from olmo_core.nn.transformer import (
+    TransformerBlockType,
+    TransformerConfig,
+    TransformerType,
+)
 from olmo_core.optim import ConstantWithWarmup, CosWithWarmup, WSD, WSDS, OptimGroupOverride, SkipStepAdamWConfig
 from olmo_core.train import (
     TrainerConfig,
@@ -41,6 +51,7 @@ from olmo_core.train.callbacks import (
     LMEvaluatorCallbackConfig,
     GPUMemoryMonitorCallback,
     ProfilerCallback,
+    RouterProbeCallback,
     WandBCallback,
 )
 from olmo_core.train.train_module import (
@@ -61,6 +72,9 @@ C4_VALIDATION_PATH = [
 
 SEQUENCE_LENGTH = 4096
 GLOBAL_BATCH_SIZE = 64 * SEQUENCE_LENGTH  # 64 seqs, matches infinite-compute batch=64
+
+MOE_TOP_K = 8
+MOE_GRANULARITY = 8  # expert width = dense d_ff / G, so top_k experts match the dense FFN
 
 
 # docs: start-define-config
@@ -122,6 +136,45 @@ def train(config: ExperimentConfig):
     trainer.fit()
 
 
+def build_model_config(opts, tokenizer_config) -> TransformerConfig:
+    vocab_size = tokenizer_config.padded_vocab_size()
+    dense = TransformerConfig.olmo2_1B_v2(vocab_size=vocab_size)
+    if not opts.num_experts:
+        return dense
+
+    # read the built hidden size rather than recomputing it: llama_like truncates twice
+    # then rounds up to a multiple of 256, so 4 * d_model is an output of that pipeline
+    # and not a rule it follows.
+    d_ff = dense.block.feed_forward.hidden_size
+
+    # same backbone as the dense arm, MoE feed-forward. Routing through olmo2_1B_v2
+    # rather than llama_like_moe inherits qk_norm, rope_theta, layer_norm_eps and
+    # hidden_size_multiplier instead of restating them, which is what keeps the arms
+    # differing in the feed-forward and nothing else.
+    return TransformerConfig.olmo2_1B_v2(
+        vocab_size=vocab_size,
+        name=TransformerType.moe,
+        block_name=TransformerBlockType.moe_reordered_norm,
+        feed_forward_moe=MoEConfig(
+            name=MoEType.dropless,
+            num_experts=opts.num_experts,
+            hidden_size=d_ff // MOE_GRANULARITY,
+            router=MoERouterConfig(
+                top_k=MOE_TOP_K,
+                gating_function=MoERouterGatingFunction.softmax,
+                jitter_eps=None,
+                normalize_expert_weights=None,
+                bias_gamma=None,
+                uniform_expert_assignment=False,
+            ),
+            # total across layers: MoEBase divides by n_layers when scale_loss_by_num_layers
+            # is set, so holding this fixed keeps the aux pressure constant across rungs.
+            lb_loss_weight=opts.lb_loss_weight,
+            z_loss_weight=0.001,
+        ),
+    )
+
+
 def build_config(opts, overrides: List[str]) -> ExperimentConfig:
     save_folder = opts.save_folder
     if not save_folder:
@@ -133,9 +186,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
 
     tokenizer_config = TokenizerConfig.dolma2()
 
-    model_config = TransformerConfig.olmo2_1B_v2(
-        vocab_size=tokenizer_config.padded_vocab_size(),  # a little bigger than actual vocab size to make it a multiple of 128
-    )
+    model_config = build_model_config(opts, tokenizer_config)
     # docs: end-model-config
 
     log.info(f"Using data root: {opts.data_root}")
@@ -263,6 +314,18 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         )
     )
 
+    # steps_per_epoch is 0 without --unique-tokens, and interval 0 divides by zero
+    # in post_step. Kept out of the chain above because the chain has no conditional form.
+    if opts.router_probe and steps_per_epoch > 0:
+        trainer_config = trainer_config.with_callback(
+            "router_probe",
+            RouterProbeCallback(
+                probe_file=opts.router_probe,
+                dump_dir=f"{save_folder}/router_probes",
+                interval=steps_per_epoch,
+            ),
+        )
+
     config = ExperimentConfig(
         model=model_config,
         dataset=dataset_config,
@@ -287,6 +350,23 @@ def parser_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("run_name", type=str, help="""The name of the run.""")
+    parser.add_argument(
+        "--num-experts",
+        type=int,
+        default=0,
+        help="""Number of routed experts. 0 builds the dense arm.""",
+    )
+    parser.add_argument(
+        "--lb-loss-weight",
+        type=float,
+        default=0.01,
+        help="""MoE load-balancing loss weight, as a total across layers.""",
+    )
+    parser.add_argument(
+        "--router-probe",
+        type=str,
+        help="""Path to the router probe .npz. Enables router instrumentation.""",
+    )
     parser.add_argument(
         "--save-folder",
         type=str,
