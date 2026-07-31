@@ -1,2 +1,0 @@
-# samir-sanity: tiny algebraic-stack slice for dense overfitting check
-sanity,accounts/projects/berkeleynlp/samir.kassam/sanity_data/tokenized/part-0-00000.npy
