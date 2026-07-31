@@ -37,9 +37,6 @@ class DataMix(DataMixBase):
 
     # Pretraining mixes
     OLMoE_mix_0824 = "OLMoE-mix-0824"
-    samir_sanity = "samir-sanity"
-    samir_sanity_val = "samir-sanity-val"
-    samir_of_train = "samir-of-train"
     dclm_10m = "dclm-10m"
     dclm_100m_train = "dclm-100m-train"
     dclm_100m_val = "dclm-100m-val"
