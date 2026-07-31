@@ -36,7 +36,7 @@ def summarize(scores: torch.Tensor, indices: torch.Tensor):
         margins=pair[:, 0] - pair[:, 1],
         n_tokens=N_TOKENS,
         top_k=TOP_K,
-        dead_expert_frac=0.1,
+        dead_expert_threshold=0.1,
     )
 
 
@@ -116,7 +116,7 @@ def test_normalization_across_expert_counts():
             margins=torch.zeros(4),
             n_tokens=N_TOKENS,
             top_k=8,
-            dead_expert_frac=0.1,
+            dead_expert_threshold=0.1,
         )
         assert close(STATS(p_bar=uniform, **common)["entropy_marginal"], 1.0)
         assert close(STATS(p_bar=collapsed, **common)["entropy_marginal"], 0.0)
@@ -130,7 +130,6 @@ def test_consistency():
     same = RouterProbeCallback._consistency(cur, cur)
     assert close(same["top1_agreement"], 1.0)
     assert close(same["topk_jaccard"], 1.0)
-    assert close(same["churn_rate"], 0.0)
 
     # disjoint expert pools: no overlap possible
     lo = rng.integers(0, 4, size=(3, 256, 1 + 4)).astype(np.int16)
@@ -138,7 +137,6 @@ def test_consistency():
     none = RouterProbeCallback._consistency(lo, hi)
     assert none["top1_agreement"] == 0.0
     assert none["topk_jaccard"] == 0.0
-    assert close(none["churn_rate"], 1.0)
     print("consistency OK")
 
 

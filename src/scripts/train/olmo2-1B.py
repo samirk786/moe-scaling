@@ -36,7 +36,14 @@ from olmo_core.nn.transformer import (
     TransformerConfig,
     TransformerType,
 )
-from olmo_core.optim import ConstantWithWarmup, CosWithWarmup, WSD, WSDS, OptimGroupOverride, SkipStepAdamWConfig
+from olmo_core.optim import (
+    ConstantWithWarmup,
+    CosWithWarmup,
+    WSD,
+    WSDS,
+    OptimGroupOverride,
+    SkipStepAdamWConfig,
+)
 from olmo_core.train import (
     TrainerConfig,
     prepare_training_environment,
@@ -48,8 +55,8 @@ from olmo_core.train.callbacks import (
     CometCallback,
     ConfigSaverCallback,
     DownstreamEvaluatorCallbackConfig,
-    LMEvaluatorCallbackConfig,
     GPUMemoryMonitorCallback,
+    LMEvaluatorCallbackConfig,
     ProfilerCallback,
     RouterProbeCallback,
     WandBCallback,
@@ -142,15 +149,12 @@ def build_model_config(opts, tokenizer_config) -> TransformerConfig:
     if not opts.num_experts:
         return dense
 
-    # read the built hidden size rather than recomputing it: llama_like truncates twice
-    # then rounds up to a multiple of 256, so 4 * d_model is an output of that pipeline
-    # and not a rule it follows.
+    # read the built size, do not recompute it: llama_like rounds up to a multiple of 256,
+    # so d_ff == 4 * d_model is an output of that and not a rule
     d_ff = dense.block.feed_forward.hidden_size
 
-    # same backbone as the dense arm, MoE feed-forward. Routing through olmo2_1B_v2
-    # rather than llama_like_moe inherits qk_norm, rope_theta, layer_norm_eps and
-    # hidden_size_multiplier instead of restating them, which is what keeps the arms
-    # differing in the feed-forward and nothing else.
+    # olmo2_1B_v2 rather than llama_like_moe: it inherits qk_norm, rope_theta, layer_norm_eps
+    # and hidden_size_multiplier, so the arms differ in the feed-forward and nothing else
     return TransformerConfig.olmo2_1B_v2(
         vocab_size=vocab_size,
         name=TransformerType.moe,
@@ -167,8 +171,8 @@ def build_model_config(opts, tokenizer_config) -> TransformerConfig:
                 bias_gamma=None,
                 uniform_expert_assignment=False,
             ),
-            # total across layers: MoEBase divides by n_layers when scale_loss_by_num_layers
-            # is set, so holding this fixed keeps the aux pressure constant across rungs.
+            # total across layers: MoEBase divides by n_layers, so holding it fixed keeps
+            # aux pressure constant as depth changes
             lb_loss_weight=opts.lb_loss_weight,
             z_loss_weight=0.001,
         ),
@@ -208,7 +212,6 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         num_workers=4,
     )
 
-    # steps per epoch from the seed budget (GLOBAL_BATCH_SIZE is in tokens)
     steps_per_epoch = round(opts.unique_tokens / GLOBAL_BATCH_SIZE) if opts.unique_tokens else 0
     if opts.scheduler == "constant":
         scheduler = ConstantWithWarmup(warmup=20)
@@ -219,6 +222,8 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
     elif opts.scheduler == "wsds":
         assert steps_per_epoch > 0, "wsds needs --unique-tokens"
         scheduler = WSDS(period_lengths=[steps_per_epoch] * opts.epochs, warmup=20, decay_fraction=0.1)
+    else:
+        raise ValueError(f"unknown scheduler {opts.scheduler}")
 
     train_module_config = TransformerTrainModuleConfig(
         rank_microbatch_size=4
@@ -314,9 +319,9 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         )
     )
 
-    # steps_per_epoch is 0 without --unique-tokens, and interval 0 divides by zero
-    # in post_step. Kept out of the chain above because the chain has no conditional form.
-    if opts.router_probe and steps_per_epoch > 0:
+    if opts.router_probe:
+        if steps_per_epoch <= 0:
+            raise ValueError("--router-probe needs --unique-tokens to set the probe interval")
         trainer_config = trainer_config.with_callback(
             "router_probe",
             RouterProbeCallback(
@@ -359,8 +364,9 @@ def parser_args():
     parser.add_argument(
         "--lb-loss-weight",
         type=float,
-        default=0.01,
-        help="""MoE load-balancing loss weight, as a total across layers.""",
+        default=0.1,
+        help="""MoE load-balancing loss weight, as a total across layers.
+        0.1 is the released EMO value; the repo preset 0.01 collapses deep-layer routing.""",
     )
     parser.add_argument(
         "--router-probe",
@@ -396,11 +402,26 @@ def parser_args():
         default="/weka/oe-training-default/ai2-llm",
         help="Root directory for the data mix (mix_base_dir).",
     )
-    parser.add_argument("--wd", type=float, default=0.033)
-    parser.add_argument("--scheduler", type=str, default="constant", choices=["constant", "cosine", "wsd", "wsds"])
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--unique-tokens", type=int, default=0)
-
+    parser.add_argument("--wd", type=float, default=0.033, help="""Weight decay.""")
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default="constant",
+        choices=["constant", "cosine", "wsd", "wsds"],
+        help="""LR schedule. wsds runs one decay period per epoch.""",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=1,
+        help="""Number of wsds periods. Ignored by the other schedulers.""",
+    )
+    parser.add_argument(
+        "--unique-tokens",
+        type=int,
+        default=0,
+        help="""Size of the unique data pool in tokens. Sets steps per epoch.""",
+    )
     opts, overrides = parser.parse_known_args()
     return opts, overrides
 

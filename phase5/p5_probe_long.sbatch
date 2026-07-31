@@ -31,12 +31,14 @@ cd /data/samir.kassam/EMO
 # 144 steps per epoch: warmup 20 is now 14% of a period rather than 50%, so router
 # behaviour past warmup is observable. 3 periods = 432 steps.
 NUM_EXPERTS=${NUM_EXPERTS:-16}
+LR=${LR:-3e-3}
+LB=${LB:-0.01}
 U_TOKENS=37748736
 STEPS_PER_EPOCH=144
 EPOCHS=3
 MAXTOK=$(( STEPS_PER_EPOCH * EPOCHS * 262144 ))
 
-RUN=p5_probe_n${NUM_EXPERTS}_j${SLURM_JOB_ID}
+RUN=p5_probe_n${NUM_EXPERTS}_lb${LB}_lr${LR}_j${SLURM_JOB_ID}
 SAVE=/data/samir.kassam/models/$RUN
 
 python src/scripts/train/olmo2-1B.py "$RUN" \
@@ -44,8 +46,9 @@ python src/scripts/train/olmo2-1B.py "$RUN" \
   --data-root=/scratch/users/samir.kassam/dclm \
   --dataset.mix=dclm-100m-train \
   --trainer.max_duration="{value: $MAXTOK, unit: tokens}" \
-  --lr=3e-3 --wd=0.8 --scheduler=wsds --epochs=$EPOCHS --unique-tokens=$U_TOKENS \
+  --lr=$LR --wd=0.8 --scheduler=wsds --epochs=$EPOCHS --unique-tokens=$U_TOKENS \
   --num-experts=$NUM_EXPERTS \
+  --lb-loss-weight=$LB \
   --trainer.callbacks.checkpointer.save_interval=$STEPS_PER_EPOCH \
   --trainer.callbacks.checkpointer.ephemeral_save_interval=$(( STEPS_PER_EPOCH - 1 )) \
   --router-probe=/scratch/users/samir.kassam/router_probe_v1.npz \
@@ -54,4 +57,4 @@ python src/scripts/train/olmo2-1B.py "$RUN" \
   --trainer.callbacks.wandb.entity=samirkassam \
   --trainer.callbacks.wandb.project=dclm-scaling \
   --trainer.callbacks.wandb.name="$RUN" \
-  --trainer.callbacks.wandb.tags="[probe_long,moe,n${NUM_EXPERTS}]"
+  --trainer.callbacks.wandb.tags="[probe_long,moe,n${NUM_EXPERTS},lb${LB},lr${LR}]"

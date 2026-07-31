@@ -93,3 +93,9 @@ plotting_env/
 extension_evals_hf_0426
 AI2_Colors.pdf
 paper.pdf
+
+# project outputs
+logs/
+*.out
+*.npz
+*.npy
