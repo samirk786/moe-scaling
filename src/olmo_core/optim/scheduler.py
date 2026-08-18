@@ -742,3 +742,36 @@ class ExponentialScheduler(Scheduler):
             growth_factor = (initial_lr / self.lr_min) ** ratio
 
         return self.lr_min * growth_factor
+
+
+@dataclass
+class WSDSqrt(WSD):
+    """
+    WSD with a (1-sqrt) decay instead of linear.
+    Reference: https://arxiv.org/abs/2405.18392
+    """
+
+    def get_lr(
+        self, initial_lr: Union[float, torch.Tensor], current: int, t_max: int
+    ) -> Union[float, torch.Tensor]:
+        if self.warmup is None:
+            assert self.warmup_fraction is not None
+            warmup = round(t_max * self.warmup_fraction)
+        else:
+            warmup = self.warmup
+
+        if current <= warmup:
+            return _linear_warmup(initial_lr, current, warmup, self.warmup_min_lr)
+
+        if self.decay is None:
+            assert self.decay_fraction is not None
+            decay = round(t_max * self.decay_fraction)
+        else:
+            decay = self.decay
+
+        if current >= t_max - decay:
+            # _linear_decay counts from the end, flip it to get progress into the decay
+            f = min(max((decay - (t_max - current)) / decay, 0.0), 1.0)
+            return self.decay_min_lr + (initial_lr - self.decay_min_lr) * (1.0 - sqrt(f))
+
+        return initial_lr

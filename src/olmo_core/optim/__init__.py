@@ -14,6 +14,7 @@ from .noop import NoOpConfig, NoOpOptimizer
 from .scheduler import (
     WSD,
     WSDS,
+    WSDSqrt,
     ConstantScheduler,
     ConstantWithWarmup,
     CosWithWarmup,
@@ -59,6 +60,7 @@ __all__ = [
     "SequentialScheduler",
     "WSD",
     "WSDS",
+    "WSDSqrt",
     "LR_FIELD",
     "INITIAL_LR_FIELD",
 ]

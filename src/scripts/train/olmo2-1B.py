@@ -41,6 +41,7 @@ from olmo_core.optim import (
     CosWithWarmup,
     WSD,
     WSDS,
+    WSDSqrt,
     OptimGroupOverride,
     SkipStepAdamWConfig,
 )
@@ -216,12 +217,18 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
     if opts.scheduler == "constant":
         scheduler = ConstantWithWarmup(warmup=20)
     elif opts.scheduler == "cosine":
-        scheduler = CosWithWarmup(warmup_steps=20)
+        scheduler = CosWithWarmup(warmup=20, alpha_f=opts.alpha_f)
     elif opts.scheduler == "wsd":
         scheduler = WSD(warmup=20, decay_fraction=0.1)
     elif opts.scheduler == "wsds":
         assert steps_per_epoch > 0, "wsds needs --unique-tokens"
         scheduler = WSDS(period_lengths=[steps_per_epoch] * opts.epochs, warmup=20, decay_fraction=0.1)
+    elif opts.scheduler == "trunk":
+        scheduler = ConstantWithWarmup(warmup=20)
+    elif opts.scheduler == "fork":
+        assert opts.decay_steps > 0, "fork needs --decay-steps"
+        cls = WSDSqrt if opts.decay_shape == "1-sqrt" else WSD
+        scheduler = cls(warmup=20, decay=opts.decay_steps, decay_fraction=None)
     else:
         raise ValueError(f"unknown scheduler {opts.scheduler}")
 
@@ -260,8 +267,8 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
         .with_callback(
             "checkpointer",
             CheckpointerCallback(
-                save_interval=(steps_per_epoch if opts.scheduler == "wsds" else 5000),
-                ephemeral_save_interval=(max(1, steps_per_epoch // 4) if opts.scheduler == "wsds" else 100),
+                save_interval=(steps_per_epoch if opts.scheduler in ("wsds", "trunk", "fork") else 5000),
+                ephemeral_save_interval=(max(1, steps_per_epoch // 4) if opts.scheduler in ("wsds", "trunk", "fork") else 100),
                 save_async=True,
             ),
         )
@@ -294,7 +301,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
                     tokenizer=tokenizer_config,
                     work_dir=work_dir,
                 ),
-                eval_interval=(steps_per_epoch if opts.scheduler == "wsds" else 25),
+                eval_interval=(steps_per_epoch if opts.scheduler in ("wsds", "trunk", "fork") else 25),
                 eval_on_startup=True,
                 eval_on_finish=True,
             ),
@@ -314,7 +321,7 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
                     "mmlu_other",
                 ],
                 tokenizer=tokenizer_config,
-                eval_interval=(steps_per_epoch if opts.scheduler == "wsds" else 250),
+                eval_interval=(steps_per_epoch if opts.scheduler in ("wsds", "trunk", "fork") else 250),
             ),
         )
     )
@@ -407,7 +414,7 @@ def parser_args():
         "--scheduler",
         type=str,
         default="constant",
-        choices=["constant", "cosine", "wsd", "wsds"],
+        choices=["constant", "cosine", "wsd", "wsds", "trunk", "fork"],
         help="""LR schedule. wsds runs one decay period per epoch.""",
     )
     parser.add_argument(
@@ -421,6 +428,25 @@ def parser_args():
         type=int,
         default=0,
         help="""Size of the unique data pool in tokens. Sets steps per epoch.""",
+    )
+    parser.add_argument(
+        "--alpha-f",
+        type=float,
+        default=0.0,
+        help="""Final LR as a fraction of peak. Cosine only."""
+    )
+    parser.add_argument(
+        "--decay-steps",
+        type=int,
+        default=0,
+        help="""Length of the fork decay in steps."""
+    )
+    parser.add_argument(
+        "--decay-shape",
+        type=str,
+        default="1-sqrt",
+        choices=["1-sqrt", "linear"],
+        help="""Fork decay shape."""
     )
     opts, overrides = parser.parse_known_args()
     return opts, overrides
