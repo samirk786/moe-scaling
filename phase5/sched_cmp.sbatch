@@ -107,7 +107,7 @@ case "$MODE" in
       --scheduler=trunk \
       --num-experts=$N_EXPERTS \
       --lb-loss-weight=0.1 \
-      --router-probe \
+      --router-probe=/scratch/users/samir.kassam/router_probe_v1.npz \
       --save-folder="$MODEL/$RUN" \
       --trainer.max_duration="{value: $(( MOE_STEPS * TOKSTEP )), unit: tokens}" \
       --trainer.callbacks.checkpointer.save_interval=1128 \
