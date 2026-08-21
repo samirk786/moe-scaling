@@ -31,7 +31,7 @@ export MASTER_PORT=$((20000 + SLURM_JOB_ID % 10000))
 
 cd /data/samir.kassam/EMO
 
-: "${MODE:?MODE must be set: trunk, fork, or cosine}"
+: "${MODE:?MODE must be set: trunk, fork, cosine, or moe}"
 : "${SHAPE:=1-sqrt}"
 
 U_TOKENS=92469693
@@ -95,5 +95,31 @@ case "$MODE" in
       --trainer.callbacks.wandb.tags="[sched_cmp,cosine,ep${EPOCHS}]" \
       "${COMMON[@]}"
     ;;
-  *) echo "MODE must be trunk, fork, or cosine" >&2; exit 1 ;;
+  moe)
+    MOE_LRS=(3e-4 1e-3 3e-3)
+    LR=${MOE_LRS[$i]}
+    WD=0.8
+    N_EXPERTS=${N_EXPERTS:-32}
+    MOE_EPOCHS=12
+    MOE_STEPS=$(( SPE * MOE_EPOCHS ))
+    RUN=moe${N_EXPERTS}_lr${LR}_wd${WD}
+    python src/scripts/train/olmo2-1B.py "$RUN" \
+      --scheduler=trunk \
+      --num-experts=$N_EXPERTS \
+      --lb-loss-weight=0.1 \
+      --router-probe \
+      --save-folder="$MODEL/$RUN" \
+      --trainer.max_duration="{value: $(( MOE_STEPS * TOKSTEP )), unit: tokens}" \
+      --trainer.callbacks.checkpointer.save_interval=1128 \
+      --trainer.callbacks.wandb.name="${RUN}_j${SLURM_JOB_ID}" \
+      --trainer.callbacks.wandb.tags="[sched_cmp,moe,N${N_EXPERTS}]" \
+      --lr="$LR" --wd="$WD" \
+      --data-root=/scratch/users/samir.kassam/dclm \
+      --dataset.mix=dclm-100m-train \
+      --unique-tokens=$U_TOKENS \
+      --trainer.callbacks.wandb.entity=samirkassam \
+      --trainer.callbacks.wandb.project=dclm-scaling \
+      --trainer.callbacks.downstream_evaluator.tasks='[hellaswag]'
+    ;;
+  *) echo "MODE must be trunk, fork, cosine, or moe" >&2; exit 1 ;;
 esac
