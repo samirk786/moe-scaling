@@ -98,7 +98,7 @@ case "$MODE" in
   moe)
     MOE_LRS=(3e-4 1e-3 3e-3)
     LR=${MOE_LRS[$i]}
-    WD=0.8
+    WD=${MOE_WD:-0.8}
     N_EXPERTS=${N_EXPERTS:-32}
     MOE_EPOCHS=12
     MOE_STEPS=$(( SPE * MOE_EPOCHS ))
