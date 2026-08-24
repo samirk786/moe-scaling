@@ -34,8 +34,8 @@ cd /data/samir.kassam/EMO
 : "${MODE:?MODE must be set: trunk, fork, cosine, or moe}"
 : "${SHAPE:=1-sqrt}"
 
-U_TOKENS=92469693
-SPE=353
+U_TOKENS=${POOL_TOKENS:-92469693}
+SPE=${POOL_SPE:-353}
 EPOCHS=16
 TOTAL=$(( SPE * EPOCHS ))          # 5648
 DECAY=$(( (TOTAL * 20 + 50) / 100 ))   # 1130
@@ -54,7 +54,7 @@ CELL=lr${LR}_wd${WD}
 MODEL=/data/samir.kassam/models
 COMMON=(
   --data-root=/scratch/users/samir.kassam/dclm
-  --dataset.mix=dclm-100m-train
+  --dataset.mix=${POOL_MIX:-dclm-100m-train}
   --lr="$LR" --wd="$WD" --unique-tokens=$U_TOKENS
   --trainer.callbacks.wandb.entity=samirkassam
   --trainer.callbacks.wandb.project=dclm-scaling
@@ -63,7 +63,7 @@ COMMON=(
 
 case "$MODE" in
   trunk)
-    RUN=trunk_$CELL
+    RUN=trunk_${POOL_TAG:+${POOL_TAG}_}$CELL
     python src/scripts/train/olmo2-1B.py "$RUN" \
       --scheduler=trunk \
       --save-folder="$MODEL/$RUN" \
@@ -104,7 +104,7 @@ case "$MODE" in
     N_EXPERTS=${N_EXPERTS:-32}
     MOE_EPOCHS=12
     MOE_STEPS=$(( SPE * MOE_EPOCHS ))
-    RUN=moe${N_EXPERTS}_lr${LR}_wd${WD}
+    RUN=moe${N_EXPERTS}_${POOL_TAG:+${POOL_TAG}_}lr${LR}_wd${WD}
     python src/scripts/train/olmo2-1B.py "$RUN" \
       --scheduler=trunk \
       --num-experts=$N_EXPERTS \
@@ -117,7 +117,7 @@ case "$MODE" in
       --trainer.callbacks.wandb.tags="[sched_cmp,moe,N${N_EXPERTS}]" \
       --lr="$LR" --wd="$WD" \
       --data-root=/scratch/users/samir.kassam/dclm \
-      --dataset.mix=dclm-100m-train \
+      --dataset.mix=${POOL_MIX:-dclm-100m-train} \
       --unique-tokens=$U_TOKENS \
       --trainer.callbacks.wandb.entity=samirkassam \
       --trainer.callbacks.wandb.project=dclm-scaling \
