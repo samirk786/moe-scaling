@@ -38,6 +38,8 @@ class DataMix(DataMixBase):
     # Pretraining mixes
     OLMoE_mix_0824 = "OLMoE-mix-0824"
     dclm_10m = "dclm-10m"
+    dclm_30m_sub = "dclm-30m-sub"
+    dclm_10m_sub = "dclm-10m-sub"
     dclm_100m_train = "dclm-100m-train"
     dclm_100m_val = "dclm-100m-val"
     dclm_fixed_val = "dclm-fixed-val"

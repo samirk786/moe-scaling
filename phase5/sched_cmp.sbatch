@@ -47,6 +47,8 @@ WDS=(0.1 0.8 3.2)
 i=$SLURM_ARRAY_TASK_ID
 LR=${LRS[$(( i / 3 ))]}
 WD=${WDS[$(( i % 3 ))]}
+LR=${OVERRIDE_LR:-$LR}
+WD=${OVERRIDE_WD:-$WD}
 CELL=lr${LR}_wd${WD}
 
 MODEL=/data/samir.kassam/models
