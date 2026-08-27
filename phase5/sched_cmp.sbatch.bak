@@ -78,20 +78,13 @@ case "$MODE" in
       "${COMMON[@]}"
     ;;
   fork)
-    # source run, fork step and decay are settable so one script covers every
-    # arm; defaults reproduce the original ep16 fork exactly.
-    SRC=${FORK_SRC:-trunk_${POOL_TAG:+${POOL_TAG}_}$CELL}
-    FORKPT=${FORK_STEP:-$FORKPT}
-    DECAY=${FORK_DECAY:-$DECAY}
-    RUN=${FORK_NAME:-fork_ep${EPOCHS}_${SHAPE}_${POOL_TAG:+${POOL_TAG}_}$CELL}
-    END=$(( FORKPT + DECAY ))
-    echo "FORK: $SRC/step$FORKPT -> $RUN, decay $DECAY, end $END"
+    RUN=fork_ep${EPOCHS}_${SHAPE}_$CELL
     python src/scripts/train/olmo2-1B.py "$RUN" \
       --scheduler=fork --decay-steps=$DECAY --decay-shape="$SHAPE" \
       --save-folder="$MODEL/$RUN" \
-      --load_path="$MODEL/$SRC/step$FORKPT" \
+      --load_path="$MODEL/trunk_$CELL/step$FORKPT" \
       --load_trainer_state=true \
-      --trainer.max_duration="{value: $(( END * TOKSTEP )), unit: tokens}" \
+      --trainer.max_duration="{value: $(( TOTAL * TOKSTEP )), unit: tokens}" \
       --trainer.callbacks.wandb.name="${RUN}_j${SLURM_JOB_ID}" \
       --trainer.callbacks.wandb.tags="[sched_cmp,fork,ep${EPOCHS}]" \
       "${COMMON[@]}"
