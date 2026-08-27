@@ -94,6 +94,7 @@ case "$MODE" in
       --trainer.max_duration="{value: $(( END * TOKSTEP )), unit: tokens}" \
       --trainer.callbacks.wandb.name="${RUN}_j${SLURM_JOB_ID}" \
       --trainer.callbacks.wandb.tags="[sched_cmp,fork,ep${EPOCHS}]" \
+      ${FORK_EXTRA:-} \
       "${COMMON[@]}"
     ;;
   cosine)
