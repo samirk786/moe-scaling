@@ -99,3 +99,4 @@ logs/
 *.out
 *.npz
 *.npy
+phase5/*.bak
