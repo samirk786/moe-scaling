@@ -41,6 +41,7 @@ class DataMix(DataMixBase):
     dclm_30m_sub = "dclm-30m-sub"
     dclm_10m_sub = "dclm-10m-sub"
     dclm_100m_train = "dclm-100m-train"
+    dclm_1b_train = "dclm-1b-train"
     dclm_100m_val = "dclm-100m-val"
     dclm_fixed_val = "dclm-fixed-val"
     dclm_upweight_1012 = "dclm-upweight-1022"
