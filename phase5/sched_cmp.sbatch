@@ -73,6 +73,7 @@ case "$MODE" in
       --save-folder="$MODEL/$RUN" \
       --trainer.max_duration="{value: $(( FORKPT * TOKSTEP )), unit: tokens}" \
       --trainer.callbacks.checkpointer.save_interval=${SAVE_EVERY:-1500} \
+      ${EVAL_EVERY:+--trainer.callbacks.lm_evaluator.eval_interval=$EVAL_EVERY} \
       --trainer.callbacks.wandb.name="${RUN}_j${SLURM_JOB_ID}" \
       --trainer.callbacks.wandb.tags="[sched_cmp,trunk]" \
       "${COMMON[@]}"
