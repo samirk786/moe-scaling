@@ -19,6 +19,7 @@ POOLS = {
     "dclm-100m-train": 92_469_693,
     "dclm-10m-sub": 10_004_022,
     "dclm-30m-sub": 30_001_113,
+    "dclm-1b-train": 948_473_071,
 }
 
 SAVE = re.compile(r"save_folder='[^']*/models/([^']+)'")
@@ -33,15 +34,17 @@ BPB = re.compile(r"hellaswag \(BPB\)=([0-9.]+)")
 
 # trunk / cosine / moe: arm, optional size-or-pool tag, lr, wd
 NAME = re.compile(r"^(cosine_ep16|trunk|moe32)"
-                  r"(?:_(n\d+m|u\d+m\d*e?p?|thid\d+m))?"
+                  r"(?:_([A-Za-z0-9]+))?"
                   r"_lr([0-9e.\-]+)_wd([0-9.]+)$")
 
 # forks: fork[SUFFIX]_(ep16|sSTEP)_SHAPE_lr..._wd...
 # suffix names the arm branched from; ep16 is the original naming for step 4518.
-FORK = re.compile(r"^fork(761|30m|C_n761m|C|moe)?_(?:ep16|s(\d+))_([0-9a-z\-]+)"
+FORK = re.compile(r"^fork(C_n761m|W_n761m|moeC|moeP|761|30m|moe|C|W)?_(?:ep16|s(\d+))_([0-9a-z\-]+)"
                   r"_lr([0-9e.\-]+)_wd([0-9.]+)$")
 FORK_TAG = {None: "", "761": "n761m", "30m": "u30m20ep",
-            "C": "", "C_n761m": "n761m", "moe": "moe32"}
+            "C": "", "C_n761m": "n761m", "moe": "moe32",
+            "moeC": "moe32", "moeP": "moe32",
+            "W": "", "W_n761m": "n761m"}
 
 
 def scan(path):
@@ -52,7 +55,10 @@ def scan(path):
     name = m.group(1)
     mix = MIX.search(head)
     dur = DUR.search(head)
-    if not mix or not dur or mix.group(1) not in POOLS:
+    if not mix or not dur:
+        return None
+    if mix.group(1) not in POOLS:
+        print(f"  UNKNOWN POOL: {mix.group(1)}  ({name})")
         return None
 
     nm = NAME.match(name)
